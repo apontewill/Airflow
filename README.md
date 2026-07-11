@@ -14,6 +14,11 @@ The service provides:
 - a repeatable GeoNames download/normalize/load process; and
 - OpenAPI documentation at `http://localhost:8001/docs`.
 
+See
+[`services/postal-validation/ARCHITECTURE.md`](services/postal-validation/ARCHITECTURE.md)
+for end-to-end ingestion, serving, decision-flow, data-model, and deployment
+diagrams.
+
 “First-world country” is not a defined or stable classification. This PoC uses
 ISO alpha-2 codes for the IMF advanced-economy group as its explicit scope, plus
 Liechtenstein. `GET /v1/countries` is the source of truth. Hong Kong (`HK`) and
