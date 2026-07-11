@@ -35,6 +35,7 @@ RULES: dict[str, PostalRule] = {
         "SW1A 1AA",
     ),
     "GR": PostalRule("Greece", r"\d{5}", "105 58"),
+    "HR": PostalRule("Croatia", r"\d{5}", "10000"),
     "IE": PostalRule("Ireland", r"(?:D6W|[AC-FHKNPRTV-Y]\d{2})[0-9AC-FHKNPRTV-Y]{4}", "D02 X285"),
     "IL": PostalRule("Israel", r"\d{7}", "9199907"),
     "IS": PostalRule("Iceland", r"\d{3}", "101"),

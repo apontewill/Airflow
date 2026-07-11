@@ -1,6 +1,6 @@
 import pytest
 
-from app.validator import format_is_valid, normalize_country, normalize_postal_code
+from app.validator import RULES, format_is_valid, normalize_country, normalize_postal_code
 
 
 @pytest.mark.parametrize(
@@ -31,3 +31,8 @@ def test_rejects_invalid_formats(country, postal_code):
 def test_country_aliases():
     assert normalize_country("uk") == "GB"
     assert normalize_country("PR") == "US"
+
+
+@pytest.mark.parametrize(("country", "rule"), RULES.items())
+def test_documented_example_is_valid(country, rule):
+    assert format_is_valid(country, rule.example)

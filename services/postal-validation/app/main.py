@@ -47,7 +47,7 @@ class ValidationResult(BaseModel):
     valid: bool
     validation_level: Literal["unsupported", "format", "reference"]
     reason: str
-    locations: list[Location] = []
+    locations: list[Location] = Field(default_factory=list)
 
 
 def configured_api_keys() -> list[str]:
