@@ -90,6 +90,33 @@ services:
     ports:
       - 8081:8080
 
+  postal-validation-api:
+    build:
+      context: ./services/postal-validation
+    environment:
+      DATABASE_URL: postgresql+psycopg://airflow:airflow@postgres:5432/airflow
+      API_KEYS: ${POSTAL_API_KEYS:-demo-key}
+    ports:
+      - 8001:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  postal-data-loader:
+    build:
+      context: ./services/postal-validation
+    profiles:
+      - postal-data
+    environment:
+      DATABASE_URL: postgresql+psycopg://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - postal-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["python", "-m", "app.ingest"]
+
   redis:
     image: redis:latest
     expose:
@@ -285,3 +312,4 @@ services:
 volumes:
   postgres-db-volume:
   portainer_data:
+  postal-data:

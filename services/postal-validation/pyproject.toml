@@ -1,0 +1,21 @@
+[project]
+name = "postal-validation-api"
+version = "0.1.0"
+description = "Proof-of-concept postal code validation and reference-data API"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.139.0",
+  "psycopg[binary]==3.3.4",
+  "sqlalchemy==2.0.51",
+  "uvicorn[standard]==0.51.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx==0.28.1",
+  "pytest==9.1.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
