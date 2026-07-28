@@ -1,92 +1,86 @@
 # Troubleshooting
 
+## Compose reports a required secret is missing
+
+Create `.env` from `.env.example`, then set non-empty values for:
+
+- `AIRFLOW__CORE__FERNET_KEY`
+- `AIRFLOW__API_AUTH__JWT_SECRET`
+
+Generation commands are in [Getting started](getting-started.md).
+
 ## Permission denied under `/opt/airflow/logs`
 
-**Cause:** On Linux, bind-mounted directories can be created with ownership
-that does not match the Airflow container user.
-
-**Action:**
+Set `AIRFLOW_UID` to the host user ID and rerun initialization:
 
 ```bash
-printf 'AIRFLOW_UID=%s\n' "$(id -u)" > .env
-mkdir -p logs plugins
+printf 'AIRFLOW_UID=%s\n' "$(id -u)" >> .env
+mkdir -p logs plugins config
 docker compose up airflow-init
 ```
 
-Then restart the stack. `images/ProblemVolumes.PNG` shows an example of this
-failure.
-
-> The repository does not currently ignore `.env`. Keep it untracked,
-> especially if you add credentials.
-
 ## A DAG is visible but does not run
 
-New DAGs start paused. Unpause the selected DAG in the Airflow UI. Only
-`ETLWeatherPrintAirflow2` has a schedule; the other three require a manual
+New DAGs start paused. Unpause the selected DAG in the UI. Only
+`ETLWeatherPrintAirflow2` has a schedule; the other DAGs require a manual
 trigger.
 
 ## DAG import fails
 
-Inspect scheduler output:
+Inspect the dedicated Airflow 3 DAG processor:
 
 ```bash
-docker compose logs airflow-scheduler
+docker compose logs airflow-dag-processor
+docker compose run --rm airflow-cli dags list-import-errors
 ```
 
-The DAG files require Pendulum, Requests, Pandas, and—for database DAGs—
-psycopg2. There is no dependency manifest or custom image, so an image change
-can cause missing-import failures.
+Confirm the image is Airflow 3.3.0 and that the standard provider is installed.
 
-## Weather API extraction fails
+## `WEATHER_API_KEY is not configured`
 
-Likely causes include:
+Add a valid WeatherAPI key to `.env`, then recreate Airflow services so Compose
+injects the new value:
 
-- the committed key has been revoked or exhausted;
-- the endpoint is unavailable;
-- the container cannot reach the internet; or
-- the API returned a non-success response.
+```bash
+docker compose up -d --force-recreate \
+  airflow-apiserver airflow-scheduler airflow-dag-processor \
+  airflow-worker airflow-triggerer
+```
 
-The current extractors have no timeout, `raise_for_status()`, retry policy, or
-response-schema validation. As a result, an HTTP failure may appear later as a
-transform error. Inspect the extract task log and migrate the request code as
-recommended in the [code review](code-review.md).
+## WeatherAPI rejects the request
+
+The extractor now fails immediately with the HTTP or API error rather than
+allowing a malformed response to reach transformation. Check that the key is
+active and permitted to access the current-weather endpoint.
 
 ## `database "WeatherData" does not exist`
 
-Compose creates only the `airflow` database. Follow the
-[database setup](getting-started.md#4-prepare-the-weather-database).
+PostgreSQL initialization scripts run only on an empty volume. For disposable
+local data, recreate the volume:
 
-## `relation "temperature" does not exist`
+```bash
+docker compose down --volumes --remove-orphans
+docker compose up airflow-init
+```
 
-Create the expected table in `WeatherData`, not in the `airflow` metadata
-database. The loaders insert into unqualified table name `temperature`.
+Do not use that command when the volume contains data you need.
 
-## A connection error becomes `UnboundLocalError`
+## Duplicate weather readings
 
-The two PostgreSQL loaders define `connection` inside a `try` and reference it
-from `except` and `finally`. If `psycopg2.connect` fails before assignment,
-cleanup raises a second error. The useful first error may still appear earlier
-in the task log. Initialize resources before the `try` or use context managers
-to fix the code.
+The table primary key is `(location, time)`, and loaders use
+`ON CONFLICT DO UPDATE`. A retry updates temperature and wind values for the
+same reading rather than creating a duplicate.
 
-## Duplicate or conflicting rows
+## API server is not reachable remotely
 
-The current load tasks perform unconditional inserts. Clearing a load task,
-retrying a DAG run, or manually rerunning the same reading can create a
-duplicate—or violate the recommended unique constraint. Make the operation
-idempotent with a unique key and `INSERT ... ON CONFLICT`.
+Port 8080 intentionally binds to `127.0.0.1`. Use local access or an
+authenticated TLS reverse proxy. Do not change it to an all-interface binding
+on an untrusted machine.
 
-## Timestamps look wrong
+## Migrating an existing Airflow 2 metadata database
 
-The transformer calls `datetime.fromtimestamp`, which uses the container's
-timezone, and then appends `+02:00`. This is wrong whenever the container is not
-already at that offset and does not account for daylight-saving changes.
-Until fixed, treat stored timestamps as unreliable. The source response's
-`location.tz_id` or an aware UTC conversion should be used.
-
-## Portainer credentials do not work
-
-The old README listed `admin/password`, but Compose does not configure those
-credentials. Portainer may require first-run account creation, depending on
-the image version and existing volume. Because the image uses `latest`, its
-behavior may also drift between pulls.
+This project's quick-start expects a new disposable PostgreSQL volume. A real
+Airflow 2 installation must first be upgraded to at least Airflow 2.7
+(preferably the latest 2.x), backed up, checked for removed features, and then
+migrated with `airflow db migrate`. Follow the
+[official Airflow 3 upgrade guide](https://airflow.apache.org/docs/apache-airflow/stable/installation/upgrading_to_airflow3.html).

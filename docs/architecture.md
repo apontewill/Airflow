@@ -3,55 +3,53 @@
 ## Runtime topology
 
 ```text
-                          +-------------------+
-                          |  Airflow UI :8080 |
-                          +---------+---------+
-                                    |
-                     schedules work | reads state
-                                    v
-+-------------+    jobs     +-------+--------+    results     +------------+
-| Scheduler   +------------>| Celery worker  +--------------->| PostgreSQL |
-+-------------+             +-------+--------+                | `airflow`  |
-                                    ^                         +------------+
-                                    |
-                              +-----+-----+
-                              | Redis     |
-                              | broker    |
-                              +-----------+
+                           +----------------------+
+                           | API server/UI :8080  |
+                           +-----------+----------+
+                                       |
+                         state and execution API
+                                       |
++---------------+ serialized DAGs +----v-----+ jobs  +---------------+
+| DAG processor +--------------->| Scheduler +------>| Celery worker |
++---------------+                +----------+        +-------+-------+
+                                                               ^
+                                                               |
+                                                          +----+------+
+                                                          | Redis     |
+                                                          | broker    |
+                                                          +-----------+
 
 Worker: WeatherAPI -> extract -> transform -> log and/or `WeatherData`
 ```
 
-The Compose stack also includes:
+Airflow 3 separates DAG parsing into `airflow-dag-processor` and serves its UI,
+REST API, and task execution API through `airflow-apiserver`. The stack also
+includes a triggerer for deferred tasks and optional Flower monitoring.
 
-- **Triggerer** for deferred Airflow tasks.
-- **Flower** for Celery monitoring.
-- **Adminer** for database administration.
-- **Portainer** for Docker administration.
-
-All Airflow containers mount `dags/`, `logs/`, and `plugins/` from the host.
-PostgreSQL and Portainer use named volumes.
+All Airflow containers mount `dags/`, `logs/`, `config/`, and `plugins/` from
+the host. PostgreSQL stores both the Airflow metadata and weather databases in
+one named volume.
 
 ## ETL data flow
 
 ### Extract
 
-Every DAG makes the same WeatherAPI current-conditions request for Berlin with
-air-quality data disabled. The classic DAG serializes the response to a JSON
-string and pushes a named XCom. TaskFlow DAGs return the decoded JSON object,
-which Airflow passes through XCom automatically.
+`dags/weather.py` makes an HTTPS WeatherAPI current-conditions request for
+Berlin with air-quality data disabled. It reads the API key from
+`WEATHER_API_KEY`, applies connect/read timeouts, checks HTTP status, and
+validates the response before returning it.
+
+The classic DAG demonstrates an explicit named XCom. TaskFlow DAGs return the
+decoded JSON object, which Airflow passes through XCom automatically.
 
 ### Transform
 
 `dags/transformer.py`:
 
-1. parses the incoming JSON string;
-2. flattens nested fields with `pandas.json_normalize`;
-3. builds a timestamp from `location.localtime_epoch`;
-4. renames selected columns; and
-5. returns a JSON array in records orientation.
-
-The output contract is:
+1. accepts the decoded response or a JSON string;
+2. validates the required location and current-weather fields;
+3. converts `location.localtime_epoch` from UTC to `location.tz_id`; and
+4. returns a typed list containing one weather record.
 
 ```json
 [
@@ -64,22 +62,18 @@ The output contract is:
 ]
 ```
 
-The values above are illustrative. The current timestamp implementation is not
-timezone-safe: it uses the container timezone and appends a fixed `+02:00`
-offset. Consumers must not assume the timestamp identifies the correct instant.
-
 ### Load
 
 The load target depends on the DAG:
 
-- write the transformed JSON to an Airflow task log;
-- print the decoded records to a task log;
-- insert the first record into
+- log or print the normalized records;
+- upsert the first record into
   `temperature(location, temp_c, wind_kph, time)`; or
 - fan out to both PostgreSQL and a print task.
 
-The PostgreSQL loaders connect directly with `psycopg2`. They do not use the
-Airflow connection shown in `images/Postgres_connection.PNG`.
+The database helper uses context-managed psycopg2 resources and an idempotent
+`ON CONFLICT (location, time) DO UPDATE`. PostgreSQL creates the weather
+database and primary key from the versioned initialization SQL.
 
 ## Repository map
 
@@ -90,19 +84,19 @@ Airflow connection shown in `images/Postgres_connection.PNG`.
 │   ├── 01-ETLWeatherPrint.py              TaskFlow print example
 │   ├── 02-ETLWeatherPostgres.py           TaskFlow PostgreSQL example
 │   ├── 03-ETLWeatherPostgresAndPrint.py   TaskFlow fan-out example
-│   └── transformer.py                     shared response transformation
+│   ├── transformer.py                     response transformation
+│   └── weather.py                         API and database operations
+├── docker/postgres-init/                  weather database initialization
 ├── docs/                                  project documentation
-├── images/                                UI and troubleshooting screenshots
-├── docker-compose.yml                     local Airflow cluster
+├── images/                                historical UI screenshots
+├── docker-compose.yml                     Airflow 3 local cluster
 └── README.md                              project landing page
 ```
 
 ## Important boundaries
 
-- The stack is explicitly local-development infrastructure.
+- The stack is local-development infrastructure, not a production deployment.
 - `airflow` and `WeatherData` are separate databases in one PostgreSQL service.
-- The Compose file creates only `airflow`; weather storage needs manual setup.
-- The DAG directory contains four independently registered pipelines, not four
-  stages of one pipeline.
-- The images are historical aids. They are not executable configuration and
-  can differ from the implementation.
+- Initialization SQL runs only when the PostgreSQL volume is first created.
+- The four DAG files register independent pipelines, not stages of one DAG.
+- Screenshots are historical aids and can differ from current Airflow 3 UI.

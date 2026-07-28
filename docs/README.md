@@ -21,20 +21,19 @@ require code changes.
 
 The project is a local Airflow course example:
 
-- Airflow 2.2.4 runs with CeleryExecutor.
+- Airflow 3.3.0 runs with CeleryExecutor.
 - Redis is the Celery broker.
-- PostgreSQL stores Airflow metadata and, after manual setup, weather data.
+- PostgreSQL stores Airflow metadata and initialized weather data.
 - Every extractor requests current weather for Berlin.
 - DAGs are paused when first discovered; three of the four are manual-only.
 
-The repository has no automated tests, dependency lock file, database
-migration, or CI workflow. Runtime behavior has therefore not been established
-for current releases of Docker, Airflow, or the third-party images.
+The repository has no CI workflow. Runtime verification steps and remaining
+risks are recorded in the [code review](code-review.md).
 
 ## Terminology
 
 - **Metadata database:** the `airflow` PostgreSQL database created by Compose.
-- **Weather database:** the manually created `WeatherData` database used by
-  the two PostgreSQL DAGs.
+- **Weather database:** the initialized `WeatherData` database used by the two
+  PostgreSQL DAGs.
 - **Weather record:** the transformer's one-element JSON array containing
   location, temperature, wind speed, and timestamp.

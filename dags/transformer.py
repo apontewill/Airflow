@@ -1,34 +1,49 @@
-
-
 import json
-import pandas as pd
-from pandas import DataFrame, json_normalize
-import datetime as dt
+from datetime import datetime, timezone
+from typing import Any, Mapping, TypedDict, Union
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-def transform_weatherAPI(im_json : str):
-    
-    print(im_json)
 
-    #load the string into a json object
-    api_json = json.loads(im_json)
+class WeatherRecord(TypedDict):
+    location: str
+    temp_c: float
+    wind_kph: float
+    timestamp: str
 
-    # normalize the contents (flatten)
-    normalized = json_normalize(api_json)
 
-    # Create a timestamp in a nice looking format
-    normalized['timestamp'] = normalized['location.localtime_epoch'].apply(lambda s : dt.datetime.fromtimestamp(s).strftime('%Y-%m-%dT%H:%M:%S+02:00'))
+def transform_weather_api(
+    weather_data: Union[str, Mapping[str, Any]],
+) -> list[WeatherRecord]:
+    """Reduce a WeatherAPI response to the fields persisted by this project."""
+    api_json = json.loads(weather_data) if isinstance(weather_data, str) else weather_data
 
-    # rename the columns to have simpler names
-    normalized.rename(columns={'location.name': 'location', 
-    'location.region': 'region',
-    'current.temp_c': 'temp_c',
-    'current.wind_kph': 'wind_kph'
-    }, inplace=True)     
+    try:
+        location = api_json["location"]
+        current = api_json["current"]
+        timezone_name = location["tz_id"]
+        localtime_epoch = location["localtime_epoch"]
+    except (KeyError, TypeError) as error:
+        api_error = api_json.get("error") if isinstance(api_json, Mapping) else None
+        if api_error:
+            raise ValueError(f"WeatherAPI returned an error: {api_error}") from error
+        raise ValueError("WeatherAPI response is missing required weather fields") from error
 
-    # filter out only the columns that we need 
-    ex_df = normalized.filter(['location','temp_c','wind_kph','timestamp'])      
+    try:
+        location_timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError(f"Unknown WeatherAPI timezone: {timezone_name}") from error
 
-    # return a json
-    ex_json = DataFrame.to_json(ex_df, orient='records')
+    timestamp = (
+        datetime.fromtimestamp(localtime_epoch, tz=timezone.utc)
+        .astimezone(location_timezone)
+        .isoformat()
+    )
 
-    return ex_json
+    return [
+        {
+            "location": location["name"],
+            "temp_c": float(current["temp_c"]),
+            "wind_kph": float(current["wind_kph"]),
+            "timestamp": timestamp,
+        }
+    ]

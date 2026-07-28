@@ -7,10 +7,9 @@ pipeline to TaskFlow pipelines with multiple load targets.
 
 > [!WARNING]
 > This repository is a learning example, not a production deployment. The
-> current code contains an exposed WeatherAPI key, default local credentials,
-> an empty Fernet key, and an unsupported Airflow version. Rotate the exposed
-> API key before using the project and review the
-> [code review](docs/code-review.md).
+> Compose stack still uses local default database credentials and is not
+> production hardened. Configure unique secrets in `.env` and review the
+> [code review](docs/code-review.md) before exposing any service.
 
 ## Documentation
 
@@ -33,21 +32,18 @@ WeatherAPI
 ```
 
 The shared transformer produces records with `location`, `temp_c`, `wind_kph`,
-and `timestamp`. The PostgreSQL DAGs expect a separate `WeatherData` database
-and a `temperature` table; the Compose stack does not currently create either.
+and a timezone-aware `timestamp`. PostgreSQL initialization creates the
+separate `WeatherData` database and its `temperature` table.
 
 ## Local services
 
-The Compose file starts Airflow with CeleryExecutor plus PostgreSQL, Redis,
-Flower, Adminer, and Portainer. Its default web endpoints are:
+The Compose file starts Airflow 3.3.0 with CeleryExecutor, PostgreSQL, and Redis.
+Flower is available through an optional profile:
 
 | Service | URL |
 | --- | --- |
-| Airflow | <http://localhost:8080> |
-| Adminer | <http://localhost:8081> |
-| Flower | <http://localhost:5555> |
-| Portainer | <http://localhost:9000> |
+| Airflow API server and UI | <http://localhost:8080> |
+| Flower (optional) | <http://localhost:5555> |
 
-Start with the [getting-started guide](docs/getting-started.md). Do not install
-the latest Airflow package with an unconstrained `pip install`: this project is
-pinned to Airflow 2.2.4 and is not compatible with Airflow 3 without migration.
+Start with the [getting-started guide](docs/getting-started.md). The project is
+pinned to the current stable Airflow 3.3.0 image for reproducible local runs.
