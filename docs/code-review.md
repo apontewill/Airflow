@@ -22,8 +22,10 @@ needs tests before behavior can be changed safely.
 ### 1. Exposed API credential sent over HTTP
 
 **Evidence:** Every DAG contains the same WeatherAPI key and calls
-`http://api.weatherapi.com` (`dags/00...py:21-22`, `01...py:37-38`,
-`02...py:42-43`, and `03...py:42-43`).
+`http://api.weatherapi.com` (`dags/00_ETLWeatherPrintAirflow2.py:21-22`,
+`dags/01-ETLWeatherPrint.py:37-38`,
+`dags/02-ETLWeatherPostgres.py:42-43`, and
+`dags/03-ETLWeatherPostgresAndPrint.py:42-43`).
 
 **Impact:** Repository readers can consume the key, and plaintext transport can
 expose both the key and response in transit.
@@ -65,7 +67,8 @@ should be the migration baseline.
 
 **Evidence:** Compose creates only database `airflow`
 (`docker-compose.yml:73-80`), while both loaders connect to `WeatherData` and
-insert into `temperature` (`dags/02...py:79-89`, `03...py:78-88`).
+insert into `temperature` (`dags/02-ETLWeatherPostgres.py:79-89` and
+`dags/03-ETLWeatherPostgresAndPrint.py:78-88`).
 
 **Impact:** The database DAGs cannot succeed until undocumented manual state
 exists.
@@ -77,8 +80,9 @@ or through a dedicated migration command.
 ### 5. Database failures can be masked by cleanup errors
 
 **Evidence:** `connection` is assigned inside `try`, then referenced in
-`except` and `finally` in both PostgreSQL loaders (`dags/02...py:79-110` and
-`03...py:78-109`).
+`except` and `finally` in both PostgreSQL loaders
+(`dags/02-ETLWeatherPostgres.py:79-110` and
+`dags/03-ETLWeatherPostgresAndPrint.py:78-109`).
 
 **Impact:** If `psycopg2.connect` fails, cleanup can raise
 `UnboundLocalError`, hiding the actionable connection error. The exception is
